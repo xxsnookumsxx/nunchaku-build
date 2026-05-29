@@ -18,28 +18,17 @@ jobs:
         with:
           python-version: '3.13'
 
-      - name: Install CUDA 13.0 Toolchain via PyPI
-        shell: pwsh
-        run: |
-          pip install --upgrade pip setuptools wheel
-          # For CUDA 13, NVIDIA dropped the "-cu13" suffix from PyPI packages
-          pip install `
-            nvidia-cuda-runtime==13.0.* `
-            nvidia-cuda-nvcc==13.0.* `
-            nvidia-cublas==13.0.* `
-            nvidia-cuda-nvrtc==13.0.*
-          
-          # Dynamically locate where pip installed the nvcc binary and set paths
-          $cudaBin = (python -c "import nvidia.cuda_nvcc; import os; print(os.path.join(os.path.dirname(nvidia.cuda_nvcc.__file__), 'bin'))")
-          $cudaPath = (python -c "import nvidia.cuda_nvcc; import os; print(os.path.dirname(os.path.dirname(nvidia.cuda_nvcc.__file__)))")
-          
-          echo "$cudaBin" >> $env:GITHUB_PATH
-          echo "CUDA_PATH=$cudaPath" >> $env:GITHUB_ENV
-          Write-Host "CUDA toolchain path mapped: $cudaBin"
+      - name: Install CUDA 13.0
+        uses: Jimver/cuda-toolkit@v0.2.21
+        id: cuda-toolkit
+        with:
+          cuda: '13.0.0'
+          method: 'network'
+          # Use network method to avoid downloading the massive full installer
 
       - name: Install Dependencies
         run: |
-          pip install ninja
+          pip install ninja setuptools wheel
           pip install torch --index-url https://download.pytorch.org/whl/cu130
 
       - name: Clone Nunchaku Source
@@ -59,8 +48,10 @@ jobs:
         shell: pwsh
         run: |
           $wheel = Get-ChildItem dist/*.whl | Select-Object -First 1
-          $newName = "nunchaku-1.3.0.dev20260306+cu13.0torch2.12-cp313-cp313-win_amd64.whl"
-          Rename-Item $wheel.FullName $newName
+          if ($wheel) {
+            $newName = "nunchaku-1.3.0.dev20260306+cu13.0torch2.12-cp313-cp313-win_amd64.whl"
+            Rename-Item $wheel.FullName $newName
+          }
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
