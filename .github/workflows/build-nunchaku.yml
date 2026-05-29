@@ -18,7 +18,7 @@ jobs:
       - name: Install CUDA
         uses: jimmyunn/setup-cuda@v2.1.0
         with:
-          cuda-version: '12.4.1' # CUDA 13 is not widely available yet; using 12.4 as a stable target
+          cuda-version: '13.0.0' # CUDA 13 is not widely available yet; using 12.4 as a stable target
 
       - name: Install Dependencies
         run: |
