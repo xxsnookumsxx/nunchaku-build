@@ -28,8 +28,6 @@ jobs:
         uses: Jimver/cuda-toolkit@master
         with:
           cuda: '13.0.0'
-          method: 'network'
-          sub-packages: '["nvcc","cudart","cudart_dev","cccl","thrust","crt","nvrtc","nvrtc_dev","cublas","cublas_dev"]'
 
       - name: Export CUDA vars
         shell: pwsh
