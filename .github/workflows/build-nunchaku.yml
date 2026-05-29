@@ -3,29 +3,39 @@ name: Build Nunchaku Windows Wheel
 on:
   workflow_dispatch: # Allows you to run it manually
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true  # Suppresses Node.js 20 deprecation warning
+
 jobs:
   build:
     runs-on: windows-2022
-    # Force Node.js 24 for all JavaScript actions in this job
-    env:
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4.2.2
 
       - name: Set up Python 3.13
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v5.6.0
         with:
           python-version: '3.13'
 
-      - name: Install CUDA via Chocolatey
+      - name: Install CUDA 13.0.0
+        shell: pwsh
         run: |
-          choco install cuda -y --version=13.0.0
+          $cudaUrl = "https://developer.download.nvidia.com/compute/cuda/13.0.0/local_installers/cuda_13.0.0_576.02_windows.exe"
+          $installer = "$env:TEMP\cuda_installer.exe"
+          Write-Host "Downloading CUDA 13.0.0 installer..."
+          Invoke-WebRequest -Uri $cudaUrl -OutFile $installer -UseBasicParsing
+          Write-Host "Installing CUDA silently..."
+          Start-Process -FilePath $installer -ArgumentList "-s nvcc_13.0 cudart_13.0 cublas_13.0 cublas_dev_13.0" -Wait -NoNewWindow
+          $cudaPath = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.0\bin"
+          echo "$cudaPath" >> $env:GITHUB_PATH
+          echo "CUDA_PATH=C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.0" >> $env:GITHUB_ENV
+          Write-Host "CUDA 13.0.0 installed."
 
       - name: Install Dependencies
         run: |
           pip install setuptools wheel ninja
-          pip install --pre torch --index-url https://download.pytorch.org/whl/nightly/cu124
+          pip install torch --index-url https://download.pytorch.org/whl/cu130
 
       - name: Clone Nunchaku Source
         run: |
@@ -37,7 +47,6 @@ jobs:
         shell: bash
         run: |
           cd nunchaku
-          # Force the version name you requested
           export NUNCHAKU_VERSION="1.3.0.dev20260306+cu13.0torch2.12"
           pip wheel . --no-deps -w ../dist/
 
