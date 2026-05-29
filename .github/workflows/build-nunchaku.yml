@@ -19,12 +19,13 @@ jobs:
           python-version: '3.13'
 
       - name: Install CUDA 13.0
-        uses: Jimver/cuda-toolkit@v0.2.21
+        uses: Jimver/cuda-toolkit@master # Using master ensures it has the latest CUDA 13+ mappings
         id: cuda-toolkit
         with:
           cuda: '13.0.0'
           method: 'network'
-          # Use network method to avoid downloading the massive full installer
+          # We only need the compiler/libraries to build, not the visual studio integration payload, etc.
+          sub-packages: '["nvcc", "cudart", "cublas", "cublas_dev"]'
 
       - name: Install Dependencies
         run: |
