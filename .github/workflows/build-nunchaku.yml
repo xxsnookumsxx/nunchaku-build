@@ -4,7 +4,7 @@ on:
   workflow_dispatch: # Allows you to run it manually
 
 env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true  # Suppresses Node.js 20 deprecation warning
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   build:
@@ -18,23 +18,24 @@ jobs:
         with:
           python-version: '3.13'
 
-      - name: Install CUDA 13.0.0
+      - name: Install CUDA 13.0 via pip wheels
         shell: pwsh
         run: |
-          $cudaUrl = "https://developer.download.nvidia.com/compute/cuda/13.0.0/local_installers/cuda_13.0.0_576.02_windows.exe"
-          $installer = "$env:TEMP\cuda_installer.exe"
-          Write-Host "Downloading CUDA 13.0.0 installer..."
-          Invoke-WebRequest -Uri $cudaUrl -OutFile $installer -UseBasicParsing
-          Write-Host "Installing CUDA silently..."
-          Start-Process -FilePath $installer -ArgumentList "-s nvcc_13.0 cudart_13.0 cublas_13.0 cublas_dev_13.0" -Wait -NoNewWindow
-          $cudaPath = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.0\bin"
-          echo "$cudaPath" >> $env:GITHUB_PATH
-          echo "CUDA_PATH=C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.0" >> $env:GITHUB_ENV
-          Write-Host "CUDA 13.0.0 installed."
+          pip install --upgrade pip setuptools wheel
+          pip install nvidia-pyindex
+          pip install `
+            nvidia-cuda-runtime-cu13==13.0.* `
+            nvidia-cuda-nvcc-cu13==13.0.* `
+            nvidia-cublas-cu13==13.0.* `
+            nvidia-cuda-nvrtc-cu13==13.0.*
+          # Add CUDA bin to PATH so nvcc is discoverable
+          $cudaBin = (python -c "import nvidia.cuda_nvcc; import os; print(os.path.join(os.path.dirname(nvidia.cuda_nvcc.__file__), 'bin'))")
+          echo "$cudaBin" >> $env:GITHUB_PATH
+          echo "CUDA_PATH=$(python -c "import nvidia.cuda_nvcc; import os; print(os.path.dirname(os.path.dirname(nvidia.cuda_nvcc.__file__)))")" >> $env:GITHUB_ENV
 
       - name: Install Dependencies
         run: |
-          pip install setuptools wheel ninja
+          pip install ninja
           pip install torch --index-url https://download.pytorch.org/whl/cu130
 
       - name: Clone Nunchaku Source
