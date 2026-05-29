@@ -6,6 +6,9 @@ on:
 jobs:
   build:
     runs-on: windows-2022
+    # Force Node.js 24 for all JavaScript actions in this job
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     steps:
       - name: Checkout
         uses: actions/checkout@v4
