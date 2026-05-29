@@ -29,7 +29,7 @@ jobs:
         with:
           cuda: '13.0.0'
           method: 'network'
-          sub-packages: '["nvcc","cudart","cublas","cublas_dev"]'
+          sub-packages: '["nvcc","cudart","cudart_dev","cccl","thrust","crt","nvrtc","nvrtc_dev","cublas","cublas_dev"]'
 
       - name: Export CUDA vars
         shell: pwsh
@@ -61,6 +61,7 @@ jobs:
           where.exe cl
           where.exe link
           where.exe nvcc
+          if (!(Test-Path "$env:CUDA_PATH\include\crt\host_defines.h")) { throw "Missing CUDA header: crt\host_defines.h" }
           cl
           & "$env:CUDA_PATH\bin\nvcc.exe" --version
           python --version
