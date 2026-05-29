@@ -4,20 +4,49 @@ on:
   workflow_dispatch:
 
 jobs:
-  build:
+  setup:
     runs-on: windows-2022
+    outputs:
+      python_version: ${{ steps.set-vars.outputs.python_version }}
+      cuda_version: ${{ steps.set-vars.outputs.cuda_version }}
+    steps:
+      - name: Set output variables
+        id: set-vars
+        shell: pwsh
+        run: |
+          echo "python_version=3.13" >> $env:GITHUB_OUTPUT
+          echo "cuda_version=13.0" >> $env:GITHUB_OUTPUT
 
-    env:
-     CMAKE_BUILD_PARALLEL_LEVEL: 1
-     NINJA_NUM_JOBS: 1
-     FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-     CUDA_DEVICE_ORDER: PCI_BUS_ID
-     CCALL_PROFILE_DIR: ""  # Disable profiling overhead
-
+  checkout:
+    runs-on: windows-2022
     steps:
       - name: Checkout workflow repo
         uses: actions/checkout@v5
 
+      - name: Clone Nunchaku source
+        shell: pwsh
+        run: |
+          git clone https://github.com/mit-han-lab/nunchaku.git
+          cd nunchaku
+          git submodule update --init --recursive
+
+      - name: Cache nunchaku source
+        uses: actions/upload-artifact@v4
+        with:
+          name: nunchaku-source
+          path: nunchaku/
+          retention-days: 1
+
+  build-flash-attention-sm80:
+    runs-on: windows-2022
+    needs: [checkout]
+    env:
+      CMAKE_BUILD_PARALLEL_LEVEL: 1
+      NINJA_NUM_JOBS: 1
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+      CUDA_DEVICE_ORDER: PCI_BUS_ID
+      CCALL_PROFILE_DIR: ""
+    steps:
       - name: Set up Python 3.13
         uses: actions/setup-python@v6
         with:
@@ -47,29 +76,260 @@ jobs:
           python -m pip install numpy packaging ninja setuptools wheel build
           python -m pip install torch==2.12.0 torchvision torchaudio --index-url https://download.pytorch.org/whl/cu130
 
-      - name: Clone Nunchaku source
+      - name: Download nunchaku source
+        uses: actions/download-artifact@v4
+        with:
+          name: nunchaku-source
+          path: nunchaku
+
+      - name: Build Flash Attention SM80 kernels
+        shell: pwsh
+        working-directory: nunchaku
+        env:
+          CUDA_HOME: C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.0
+          CUDA_PATH: C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.0
+          CUDACXX: C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.0\bin\nvcc.exe
+          TORCH_CUDA_ARCH_LIST: 8.6+PTX
+          DISTUTILS_USE_SDK: 1
+          NUNCHAKU_INSTALL_MODE: ALL
+          NUNCHAKU_BUILD_WHEELS: 0
+        run: |
+          python setup.py build_ext --inplace
+
+      - name: Upload SM80 artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-sm80-artifacts
+          path: nunchaku/build/
+          retention-days: 1
+
+  build-gemm-kernels:
+    runs-on: windows-2022
+    needs: [checkout]
+    env:
+      CMAKE_BUILD_PARALLEL_LEVEL: 1
+      NINJA_NUM_JOBS: 1
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+      CUDA_DEVICE_ORDER: PCI_BUS_ID
+      CCALL_PROFILE_DIR: ""
+    steps:
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+
+      - name: Enable MSVC developer command prompt
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: amd64
+
+      - name: Install CUDA 13.0
+        uses: Jimver/cuda-toolkit@master
+        with:
+          cuda: '13.0.0'
+
+      - name: Export CUDA vars
         shell: pwsh
         run: |
-          git clone https://github.com/mit-han-lab/nunchaku.git
-          cd nunchaku
-          git submodule update --init --recursive
+          "CUDA_HOME=$env:CUDA_PATH" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "CUDACXX=$env:CUDA_PATH\bin\nvcc.exe" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "PATH=$env:CUDA_PATH\bin;$env:PATH" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
-      - name: Verify toolchain
+      - name: Install Python dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install numpy packaging ninja setuptools wheel build
+          python -m pip install torch==2.12.0 torchvision==2.12.0 torchaudio==2.11.0 --index-url https://download.pytorch.org/whl/cu130
+
+      - name: Download nunchaku source
+        uses: actions/download-artifact@v4
+        with:
+          name: nunchaku-source
+          path: nunchaku
+
+      - name: Build GEMM kernels
+        shell: pwsh
+        working-directory: nunchaku
+        env:
+          CUDA_HOME: C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.0
+          CUDA_PATH: C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.0
+          CUDACXX: C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.0\bin\nvcc.exe
+          TORCH_CUDA_ARCH_LIST: 8.0+PTX
+          DISTUTILS_USE_SDK: 1
+          NUNCHAKU_INSTALL_MODE: ALL
+          NUNCHAKU_BUILD_WHEELS: 0
+        run: |
+          python setup.py build_ext --inplace
+
+      - name: Upload GEMM artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-gemm-artifacts
+          path: nunchaku/build/
+          retention-days: 1
+
+  build-other-kernels:
+    runs-on: windows-2022
+    needs: [checkout]
+    env:
+      CMAKE_BUILD_PARALLEL_LEVEL: 1
+      NINJA_NUM_JOBS: 1
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+      CUDA_DEVICE_ORDER: PCI_BUS_ID
+      CCALL_PROFILE_DIR: ""
+    steps:
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+
+      - name: Enable MSVC developer command prompt
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: amd64
+
+      - name: Install CUDA 13.0
+        uses: Jimver/cuda-toolkit@master
+        with:
+          cuda: '13.0.0'
+
+      - name: Export CUDA vars
+        shell: pwsh
+        run: |
+          "CUDA_HOME=$env:CUDA_PATH" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "CUDACXX=$env:CUDA_PATH\bin\nvcc.exe" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "PATH=$env:CUDA_PATH\bin;$env:PATH" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Install Python dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install numpy packaging ninja setuptools wheel build
+          python -m pip install torch==2.12.0 torchvision torchaudio --index-url https://download.pytorch.org/whl/cu130
+
+      - name: Download nunchaku source
+        uses: actions/download-artifact@v4
+        with:
+          name: nunchaku-source
+          path: nunchaku
+
+      - name: Build other kernels (SM 8.6, 9.0, 12.0)
+        shell: pwsh
+        working-directory: nunchaku
+        env:
+          CUDA_HOME: C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.0
+          CUDA_PATH: C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.0
+          CUDACXX: C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.0\bin\nvcc.exe
+          TORCH_CUDA_ARCH_LIST: 8.6;9.0;12.0+PTX
+          DISTUTILS_USE_SDK: 1
+          NUNCHAKU_INSTALL_MODE: ALL
+          NUNCHAKU_BUILD_WHEELS: 0
+        run: |
+          python setup.py build_ext --inplace
+
+      - name: Upload other artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-other-artifacts
+          path: nunchaku/build/
+          retention-days: 1
+
+  merge-and-package:
+    runs-on: windows-2022
+    needs: [build-flash-attention-sm80, build-gemm-kernels, build-other-kernels]
+    steps:
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+
+      - name: Enable MSVC developer command prompt
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: amd64
+
+      - name: Install CUDA 13.0
+        uses: Jimver/cuda-toolkit@master
+        with:
+          cuda: '13.0.0'
+
+      - name: Export CUDA vars
+        shell: pwsh
+        run: |
+          "CUDA_HOME=$env:CUDA_PATH" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "CUDACXX=$env:CUDA_PATH\bin\nvcc.exe" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "PATH=$env:CUDA_PATH\bin;$env:PATH" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Install Python dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install numpy packaging ninja setuptools wheel build
+          python -m pip install torch==2.12.0 torchvision torchaudio --index-url https://download.pytorch.org/whl/cu130
+
+      - name: Download nunchaku source
+        uses: actions/download-artifact@v4
+        with:
+          name: nunchaku-source
+          path: nunchaku
+
+      - name: Download all build artifacts
+        shell: pwsh
+        run: |
+          mkdir -p artifacts
+          
+          # Download each set of artifacts
+          $artifacts = @("build-sm80-artifacts", "build-gemm-artifacts", "build-other-artifacts")
+          foreach ($artifact in $artifacts) {
+              Write-Host "Downloading $artifact..."
+              # This will be automatically placed in subdirectories by actions/download-artifact
+          }
+
+      - name: Download SM80 artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-sm80-artifacts
+          path: build-sm80
+
+      - name: Download GEMM artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-gemm-artifacts
+          path: build-gemm
+
+      - name: Download other artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-other-artifacts
+          path: build-other
+
+      - name: Merge all build artifacts
         shell: pwsh
         working-directory: nunchaku
         run: |
-          Write-Host "CUDA_PATH=$env:CUDA_PATH"
-          Write-Host "CUDA_HOME=$env:CUDA_HOME"
-          where.exe cl
-          where.exe link
-          where.exe nvcc
-          if (!(Test-Path "$env:CUDA_PATH\include\crt\host_defines.h")) { throw "Missing CUDA header: crt\host_defines.h" }
-          cl
-          & "$env:CUDA_PATH\bin\nvcc.exe" --version
-          python --version
-          python -c "import torch; print(torch.__version__)"
+          # Create a merged build directory
+          New-Item -ItemType Directory -Force -Path build\merged | Out-Null
+          
+          # Copy all object files and build artifacts from parallel builds
+          if (Test-Path ..\build-sm80) {
+            Write-Host "Merging SM80 artifacts..."
+            Copy-Item ..\build-sm80\* -Destination build\merged -Recurse -Force
+          }
+          if (Test-Path ..\build-gemm) {
+            Write-Host "Merging GEMM artifacts..."
+            Copy-Item ..\build-gemm\* -Destination build\merged -Recurse -Force
+          }
+          if (Test-Path ..\build-other) {
+            Write-Host "Merging other artifacts..."
+            Copy-Item ..\build-other\* -Destination build\merged -Recurse -Force
+          }
+          
+          # Move merged artifacts to build directory
+          Remove-Item build -Recurse -Force
+          Move-Item build\merged build
 
-      - name: Build wheel
+      - name: Create wheel package
         shell: pwsh
         working-directory: nunchaku
         env:
