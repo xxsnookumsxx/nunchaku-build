@@ -5,7 +5,7 @@ on:
 
 jobs:
   setup:
-    runs-on: self-hosted
+    runs-on: [self-hosted, Windows, X64]
     outputs:
       python_version: ${{ steps.set-vars.outputs.python_version }}
       cuda_version: ${{ steps.set-vars.outputs.cuda_version }}
